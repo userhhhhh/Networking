@@ -174,7 +174,6 @@ func listandchange(conn, targetConn net.Conn) {
 		}
 
 		responseBytes, err := io.ReadAll(response.Body)
-
 		fmt.Println("responseBytes:", string(responseBytes))
 		if err != nil {
 			panic(err)
@@ -192,6 +191,8 @@ func listandchange(conn, targetConn net.Conn) {
 			res = responseBytes
 		}
 
+		bodylen := len(res)
+
 		responseStr := string(res)
 
 		fmt.Println("ResponseStr:", responseStr)
@@ -200,14 +201,25 @@ func listandchange(conn, targetConn net.Conn) {
 
 		modifiedResponse := []byte(responseStr)
 
+		bodylen = len(modifiedResponse)
+
 		Newres := response
 		response.Body.Close()
 		Newres.Body = ioutil.NopCloser(bytes.NewReader(modifiedResponse))
 		Newres.Header.Del("Content-Encoding")
 		Newres.Header.Del("Transfer-Encoding")
-		NewBuf, _ := responseToByteSlice(Newres)
+		Newres.Header.Set("Content-Length", fmt.Sprintf("%d", bodylen))
+		Newres.ContentLength = int64(bodylen)
 
-		_, err = conn.Write(NewBuf)
+		var serializedResponse bytes.Buffer
+		err = Newres.Write(&serializedResponse)
+		if err != nil {
+			return
+		}
+
+		//NewBuf, _ := responseToByteSlice(Newres)
+
+		_, err = conn.Write(serializedResponse.Bytes())
 		if err != nil {
 			return
 		}
