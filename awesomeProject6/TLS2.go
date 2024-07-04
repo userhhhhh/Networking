@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -94,20 +95,20 @@ func main() {
 	}
 }
 
-func process_handshake(conn net.Conn) (string, error) {
+func process_handshake(conn net.Conn) (string, int, error) {
 	buf := make([]byte, 2)
 	_, err := io.ReadFull(conn, buf)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if buf[0] != 0x05 {
-		return "", errors.New("sock5 not supported")
+		return "", 0, errors.New("sock5 not supported")
 	}
 	nMethods := buf[1]
 	methods := make([]byte, nMethods)
 	_, err1 := io.ReadFull(conn, methods)
 	if err1 != nil {
-		return "", err1
+		return "", 0, err1
 	}
 
 	response := make([]byte, 2)
@@ -115,22 +116,22 @@ func process_handshake(conn net.Conn) (string, error) {
 	response[1] = 0x00
 	_, err2 := conn.Write(response)
 	if err2 != nil {
-		return "", err2
+		return "", 0, err2
 	}
 
 	buf = make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if buf[0] != 0x05 {
-		return "", errors.New("socks5 not supported")
+		return "", 0, errors.New("socks5 not supported")
 	}
 	if buf[1] != 0x01 {
-		return "", errors.New("only support connect command")
+		return "", 0, errors.New("only support connect command")
 	}
 	if buf[2] != 0x00 {
-		return "", errors.New("only support no authentication required")
+		return "", 0, errors.New("only support no authentication required")
 	}
 	var addr string
 	switch buf[3] {
@@ -141,15 +142,16 @@ func process_handshake(conn net.Conn) (string, error) {
 	case 0x04:
 		addr = fmt.Sprintf("%d.%d.%d.%d:%d", buf[4], buf[5], buf[6], buf[7], buf[8])
 	default:
-		return "", nil
+		return "", 0, nil
 	}
+	port := int(binary.BigEndian.Uint16(buf[n-2:]))
 
 	response1 := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if _, err := conn.Write(response1); err != nil {
-		return "", err
+		return "", 0, err
 	}
 
-	return addr, nil
+	return addr, port, nil
 }
 
 func decompressGzip(data []byte) ([]byte, error) {
@@ -171,7 +173,7 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func listandchange(conn, targetConn net.Conn) {
-	fmt.Println("listandchange")
+	//fmt.Println("listandchange")
 	for i := 0; i < 50; i++ {
 		response, err := http.ReadResponse(bufio.NewReader(targetConn), nil)
 		if err != nil {
@@ -180,7 +182,7 @@ func listandchange(conn, targetConn net.Conn) {
 		}
 
 		responseBytes, err := io.ReadAll(response.Body)
-		fmt.Println("responseBytes:", string(responseBytes))
+		//fmt.Println("responseBytes:", string(responseBytes))
 		if err != nil {
 			panic(err)
 			return
@@ -201,19 +203,19 @@ func listandchange(conn, targetConn net.Conn) {
 
 		responseStr := string(res)
 
-		fmt.Println("ResponseStr:", responseStr)
+		//fmt.Println("ResponseStr:", responseStr)
 
-		responseStr = strings.Replace(responseStr, "Example", "SJTU", -1)
+		responseStr = strings.Replace(responseStr, "百度", "抽象", -1)
 
 		modifiedResponse := []byte(responseStr)
 
 		bodylen = len(modifiedResponse)
 
 		Newres := response
-		response.Body.Close()
+		defer response.Body.Close()
 		Newres.Body = ioutil.NopCloser(bytes.NewReader(modifiedResponse))
 		Newres.Header.Del("Content-Encoding")
-		Newres.Header.Del("Transfer-Encoding")
+		//Newres.Header.Del("Transfer-Encoding")
 		Newres.Header.Set("Content-Length", fmt.Sprintf("%d", bodylen))
 		Newres.ContentLength = int64(bodylen)
 
@@ -223,8 +225,6 @@ func listandchange(conn, targetConn net.Conn) {
 			return
 		}
 
-		//NewBuf, _ := responseToByteSlice(Newres)
-
 		_, err = conn.Write(serializedResponse.Bytes())
 		if err != nil {
 			return
@@ -232,16 +232,42 @@ func listandchange(conn, targetConn net.Conn) {
 	}
 }
 
+func handlerequest(clientTLS, serverTLS net.Conn) error {
+	res, err := http.ReadRequest(bufio.NewReader(clientTLS))
+	if err != nil {
+		fmt.Println("ReadRequest error:", err)
+		return err
+	}
+	encoding := res.Header.Get("Accept-Encoding")
+	if flag := strings.Contains(encoding, "gzip"); flag == false {
+		res.Header.Del("Accept-Encoding")
+	} else {
+		res.Header.Set("Accept-Encoding", "gzip")
+	}
+	var serializedResponse bytes.Buffer
+	err = res.Write(&serializedResponse)
+	if err != nil {
+		return err
+	}
+	_, err = serverTLS.Write(serializedResponse.Bytes())
+	if err != nil {
+		fmt.Println("Write error:", err)
+		return err
+	}
+	return nil
+}
+
 func handleClient(clientConn net.Conn) {
 	defer clientConn.Close()
 
-	serverAddr1, err := process_handshake(clientConn)
+	serverAddr1, port, err := process_handshake(clientConn)
 	if err != nil {
 		return
 	}
 
 	//serverAddr = "www.example.com:443"
-	port := 443
+	port = 443
+
 	serverAddr2 := net.JoinHostPort(serverAddr1, strconv.Itoa(int(port)))
 
 	serverTLS, err := tls.Dial("tcp", serverAddr2, nil)
@@ -258,7 +284,15 @@ func handleClient(clientConn net.Conn) {
 	}
 	defer clientTLS.Close()
 
-	go io.Copy(serverTLS, clientTLS)
+	go func() {
+		for {
+			err := handlerequest(clientTLS, serverTLS)
+			if err != nil {
+				return
+			}
+		}
+	}()
+	//go io.Copy(serverTLS, clientTLS)
 
 	listandchange(clientTLS, serverTLS)
 
