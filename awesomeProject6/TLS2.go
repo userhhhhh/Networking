@@ -171,9 +171,11 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func listandchange(conn, targetConn net.Conn) {
+	fmt.Println("listandchange")
 	for i := 0; i < 50; i++ {
 		response, err := http.ReadResponse(bufio.NewReader(targetConn), nil)
 		if err != nil {
+			fmt.Println("ReadResponse error:", err)
 			return
 		}
 
@@ -256,11 +258,11 @@ func handleClient(clientConn net.Conn) {
 	}
 	defer clientTLS.Close()
 
-	go io.Copy(clientTLS, serverTLS)
+	go io.Copy(serverTLS, clientTLS)
 
-	//listandchange(clientTLS, serverTLS)
+	listandchange(clientTLS, serverTLS)
 
-	io.Copy(serverTLS, clientTLS)
+	io.Copy(clientTLS, serverTLS)
 }
 
 func setupTLS(conn net.Conn, isClient bool, domain string) (*tls.Conn, error) {
