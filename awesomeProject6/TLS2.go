@@ -171,7 +171,7 @@ func decompressGzip(data []byte) ([]byte, error) {
 }
 
 func listandchange(conn, targetConn net.Conn) {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 50; i++ {
 		response, err := http.ReadResponse(bufio.NewReader(targetConn), nil)
 		if err != nil {
 			return
@@ -233,23 +233,23 @@ func listandchange(conn, targetConn net.Conn) {
 func handleClient(clientConn net.Conn) {
 	defer clientConn.Close()
 
-	serverAddr, err := process_handshake(clientConn)
+	serverAddr1, err := process_handshake(clientConn)
 	if err != nil {
 		return
 	}
 
-	//serverAddr := "www.example.com:443"
-	port := 433
-	serverAddr = net.JoinHostPort(serverAddr, strconv.Itoa(int(port)))
+	//serverAddr = "www.example.com:443"
+	port := 443
+	serverAddr2 := net.JoinHostPort(serverAddr1, strconv.Itoa(int(port)))
 
-	serverTLS, err := tls.Dial("tcp", serverAddr, nil)
+	serverTLS, err := tls.Dial("tcp", serverAddr2, nil)
 	if err != nil {
 		log.Printf("Failed to connect to server: %v", err)
 		return
 	}
 	defer serverTLS.Close()
 
-	clientTLS, err := setupTLS(clientConn, true, serverAddr)
+	clientTLS, err := setupTLS(clientConn, true, serverAddr1)
 	if err != nil {
 		log.Printf("Failed to setup TLS for client: %v", err)
 		return
