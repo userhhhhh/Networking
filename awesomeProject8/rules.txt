@@ -1,7 +1,0 @@
-||example.com http://localhost:7890
-||*.example.net http://localhost:7891
-example.org http://localhost:7892
-||*.baidu.com 0.0.0.0:7890
-||*.poj.org 0.0.0.0:7890
-||poj.org 0.0.0.0:7890
-||*.youtube.com 0.0.0.0:7890

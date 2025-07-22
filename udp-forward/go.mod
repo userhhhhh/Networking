@@ -1,4 +1,4 @@
-module awesomeProject4
+module udp-forward
 
 go 1.22
 
